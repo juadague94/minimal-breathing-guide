@@ -1,0 +1,161 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Minimal Breathing Guide (Mobile Safe)</title>
+<style>
+  body {
+    background: #0a0a0a; color: #eaeaea;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    height: 100vh; margin: 0; font-family: system-ui, sans-serif;
+  }
+  h1 { font-size: 1.2em; margin-bottom: 0.4em; }
+  .circle {
+    width: 200px; height: 200px; border-radius: 50%;
+    background: #222; display: flex; align-items: center;
+    justify-content: center; margin: 1.5em 0;
+    transition: transform 1s ease-in-out;
+  }
+  .inner {
+    width: 75%; height: 75%; border-radius: 50%;
+    background: #333; display: flex; align-items: center;
+    justify-content: center; flex-direction: column;
+  }
+  .time { font-size: 1.6em; }
+  .phase { font-size: 0.9em; color: #aaa; }
+  .controls { display: flex; gap: 1em; justify-content: center; }
+  label { font-size: 0.8em; color: #aaa; }
+  input[type=range] { width: 100px; }
+  button { margin-top: 1em; padding: 0.6em 1.2em; background: #4ad3ff; border: none;
+           border-radius: 6px; cursor: pointer; font-weight: bold; color: #000; }
+  button:disabled { background: #444; color: #aaa; cursor: not-allowed; }
+</style>
+</head>
+<body>
+  <h1>Minimal Breathing Guide</h1>
+  <div class="controls">
+    <div>
+      <label>Inhale (s): <span id="inhaleVal">4</span></label><br>
+      <input type="range" id="inhale" min="1" max="12" step="0.5" value="4">
+    </div>
+    <div>
+      <label>Exhale (s): <span id="exhaleVal">6</span></label><br>
+      <input type="range" id="exhale" min="1" max="12" step="0.5" value="6">
+    </div>
+  </div>
+
+  <div class="circle" id="circle">
+    <div class="inner">
+      <div class="time" id="timeDisplay">0.0</div>
+      <div class="phase" id="phaseDisplay">Ready</div>
+    </div>
+  </div>
+
+  <button id="startBtn">Start</button>
+  <button id="stopBtn" disabled>Stop</button>
+
+<script>
+let inhaleEl = document.getElementById('inhale');
+let exhaleEl = document.getElementById('exhale');
+let inhaleVal = document.getElementById('inhaleVal');
+let exhaleVal = document.getElementById('exhaleVal');
+let circle = document.getElementById('circle');
+let timeDisplay = document.getElementById('timeDisplay');
+let phaseDisplay = document.getElementById('phaseDisplay');
+let startBtn = document.getElementById('startBtn');
+let stopBtn = document.getElementById('stopBtn');
+
+inhaleEl.oninput = () => inhaleVal.textContent = inhaleEl.value;
+exhaleEl.oninput = () => exhaleVal.textContent = exhaleEl.value;
+
+let running = false;
+let audioCtx, oscillator, gainNode;
+
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    oscillator = audioCtx.createOscillator();
+    gainNode = audioCtx.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.value = 220;
+    gainNode.gain.value = 0.05;
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    oscillator.start();
+  }
+}
+
+function stopAudio() {
+  if (oscillator) { oscillator.stop(); oscillator.disconnect(); oscillator = null; }
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+}
+
+function setPitch(freq) {
+  if (oscillator && audioCtx) {
+    oscillator.frequency.cancelScheduledValues(audioCtx.currentTime);
+    oscillator.frequency.linearRampToValueAtTime(freq, audioCtx.currentTime + 0.5);
+  }
+}
+
+function animatePhase(duration, expand) {
+  return new Promise(resolve => {
+    let start = performance.now();
+    function step(now) {
+      if (!running) return resolve();
+      let elapsed = (now - start) / 1000;
+      let progress = Math.min(elapsed / duration, 1);
+      let scale = expand ? (1 + 0.3 * progress) : (1.3 - 0.3 * progress);
+      circle.style.transform = `scale(${scale})`;
+      timeDisplay.textContent = (duration - elapsed).toFixed(1);
+      if (progress < 1) requestAnimationFrame(step);
+      else resolve();
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+async function runBreathing() {
+  running = true;
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+
+  while (running) {
+    let inhaleTime = parseFloat(inhaleEl.value);
+    let exhaleTime = parseFloat(exhaleEl.value);
+
+    phaseDisplay.textContent = "Inhale";
+    setPitch(220);
+    await animatePhase(inhaleTime, true);
+    if (!running) break;
+
+    phaseDisplay.textContent = "Exhale";
+    setPitch(180);
+    await animatePhase(exhaleTime, false);
+  }
+
+  stopAudio();
+  phaseDisplay.textContent = "Stopped";
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+}
+
+startBtn.onclick = () => {
+  if (!audioCtx) {
+    // Unlock and init audio within first tap (required for iOS Safari)
+    initAudio();
+  } else if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  runBreathing();
+};
+
+stopBtn.onclick = () => {
+  running = false;
+  stopAudio();
+};
+</script>
+</body>
+</html>
